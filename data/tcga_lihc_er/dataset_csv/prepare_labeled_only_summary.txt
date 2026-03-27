@@ -1,0 +1,6 @@
+task csv rows: 148
+unique labeled slide_ids: 148
+valid labeled slides with existing WSI: 148
+symlink created: 148
+symlink skipped: 0
+symlink conflicts: 0
