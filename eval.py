@@ -12,6 +12,7 @@ from utils.utils import *
 from math import floor
 import matplotlib.pyplot as plt
 from dataset_modules.dataset_generic import Generic_WSI_Classification_Dataset, Generic_MIL_Dataset, save_splits
+from dataset_modules.task_config import load_task_config
 import h5py
 from utils.eval_utils import *
 
@@ -39,10 +40,20 @@ parser.add_argument('--fold', type=int, default=-1, help='single fold to evaluat
 parser.add_argument('--micro_average', action='store_true', default=False, 
                     help='use micro_average instead of macro_avearge for multiclass AUC')
 parser.add_argument('--split', type=str, choices=['train', 'val', 'test', 'all'], default='test')
-parser.add_argument('--task', type=str, choices=['task_1_tumor_vs_normal',  'task_2_tumor_subtyping',  'task_tcga_lihc_early_recurrence'])
+parser.add_argument('--task', type=str, default=None,
+                    help='built-in task name')
+parser.add_argument('--task_config', type=str, default=None,
+                    help='optional JSON task config for custom datasets')
 parser.add_argument('--drop_out', type=float, default=0.25, help='dropout')
 parser.add_argument('--embed_dim', type=int, default=1024)
+parser.add_argument('--seed', type=int, default=1,
+                    help='random seed for reproducible dataset metadata handling (default: 1)')
 args = parser.parse_args()
+try:
+    task_config = load_task_config(args.task, args.task_config)
+except ValueError as exc:
+    parser.error(str(exc))
+args.task = task_config.task
 
 device=torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -53,11 +64,14 @@ os.makedirs(args.save_dir, exist_ok=True)
 
 if args.splits_dir is None:
     args.splits_dir = args.models_dir
+else:
+    args.splits_dir = task_config.resolve_split_dir(args.splits_dir)
 
 assert os.path.isdir(args.models_dir)
 assert os.path.isdir(args.splits_dir)
 
 settings = {'task': args.task,
+            'task_config': args.task_config,
             'split': args.split,
             'save_dir': args.save_dir, 
             'models_dir': args.models_dir,
@@ -70,52 +84,18 @@ with open(args.save_dir + '/eval_experiment_{}.txt'.format(args.save_exp_code), 
 f.close()
 
 print(settings)
-if args.task == 'task_1_tumor_vs_normal':
-    args.n_classes=2
-    dataset = Generic_MIL_Dataset(csv_path = 'dataset_csv/tumor_vs_normal_dummy_clean.csv',
-                            data_dir= os.path.join(args.data_root_dir, 'tumor_vs_normal_resnet_features'),
-                            shuffle = False, 
-                            print_info = True,
-                            label_dict = {'normal_tissue':0, 'tumor_tissue':1},
-                            patient_strat=False,
-                            ignore=[])
-
-elif args.task == 'task_2_tumor_subtyping':
-    args.n_classes=3
-    dataset = Generic_MIL_Dataset(csv_path = 'dataset_csv/tumor_subtyping_dummy_clean.csv',
-                            data_dir= os.path.join(args.data_root_dir, 'tumor_subtyping_resnet_features'),
-                            shuffle = False, 
-                            print_info = True,
-                            label_dict = {'subtype_1':0, 'subtype_2':1, 'subtype_3':2},
-                            patient_strat= False,
-                            ignore=[])
-
-elif args.task == 'task_tcga_lihc_early_recurrence':
-    args.n_classes = 2
-    dataset = Generic_MIL_Dataset(
-        csv_path='dataset_csv/tcga_lihc_er.csv',
-        data_dir=os.path.join(args.data_root_dir, 'features_uni'),
-        shuffle=False,
-        seed=args.seed,
-        print_info=True,
-        label_dict={0: 0, 1: 1},
-        label_col='label',
-        patient_strat=True,
-        ignore=[]
-    )
-
-# elif args.task == 'tcga_kidney_cv':
-#     args.n_classes=3
-#     dataset = Generic_MIL_Dataset(csv_path = 'dataset_csv/tcga_kidney_clean.csv',
-#                             data_dir= os.path.join(args.data_root_dir, 'tcga_kidney_20x_features'),
-#                             shuffle = False, 
-#                             print_info = True,
-#                             label_dict = {'TCGA-KICH':0, 'TCGA-KIRC':1, 'TCGA-KIRP':2},
-#                             patient_strat= False,
-#                             ignore=['TCGA-SARC'])
-
-else:
-    raise NotImplementedError
+args.n_classes = task_config.n_classes
+dataset = Generic_MIL_Dataset(
+    csv_path=task_config.resolve_dataset_csv(),
+    data_dir=task_config.resolve_features_dir(args.data_root_dir),
+    shuffle=False,
+    seed=args.seed,
+    print_info=True,
+    label_dict=task_config.label_dict,
+    label_col=task_config.label_col,
+    patient_strat=task_config.mil_patient_strat,
+    ignore=list(task_config.ignore),
+)
 
 if args.k_start == -1:
     start = 0
@@ -145,7 +125,7 @@ if __name__ == "__main__":
             datasets = dataset.return_splits(from_id=False, csv_path=csv_path)
             split_dataset = datasets[datasets_id[args.split]]
         model, patient_results, test_error, auc, df  = eval(split_dataset, args, ckpt_paths[ckpt_idx])
-        all_results.append(all_results)
+        all_results.append(patient_results)
         all_auc.append(auc)
         all_acc.append(1-test_error)
         df.to_csv(os.path.join(args.save_dir, 'fold_{}.csv'.format(folds[ckpt_idx])), index=False)

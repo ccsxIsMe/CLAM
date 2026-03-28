@@ -1,57 +1,121 @@
-import pandas as pd
+import argparse
 from pathlib import Path
 
-root = Path("/data3/chensx/CLAM/data/tcga_lihc_er")
-meta = root / "metadata"
-out_dataset = root / "dataset_csv"
-out_splits = root / "splits"
-out_dataset.mkdir(parents=True, exist_ok=True)
-out_splits.mkdir(parents=True, exist_ok=True)
+import pandas as pd
 
-slides = pd.read_csv(meta / "slides.csv")          # patient_id, slide_id, wsi_path
-labels = pd.read_csv(meta / "labels_24m.csv")      # patient_id, early_recurrence
-splits = pd.read_csv(meta / "splits.csv")          # patient_id, slide_id, split
 
-# 1) 训练主表
-df = slides.merge(labels, on="patient_id", how="inner").copy()
-df = df.rename(columns={
-    "patient_id": "case_id",
-    "early_recurrence": "label"
-})
-df = df[["case_id", "slide_id", "label"]].drop_duplicates()
+def parse_args():
+    root = Path(__file__).resolve().parent
 
-# 保证 label 是整数 0/1
-df["label"] = df["label"].astype(int)
-df.to_csv(out_dataset / "tcga_lihc_er.csv", index=False)
+    parser = argparse.ArgumentParser(
+        description="Prepare CLAM dataset_csv and split CSVs for TCGA-LIHC early recurrence."
+    )
+    parser.add_argument(
+        "--slides-csv",
+        type=Path,
+        default=root / "metadata" / "slides.csv",
+        help="CSV containing slide metadata with slide_id and wsi_path columns.",
+    )
+    parser.add_argument(
+        "--labels-csv",
+        type=Path,
+        default=root / "metadata" / "labels_24m.csv",
+        help="CSV containing patient-level labels.",
+    )
+    parser.add_argument(
+        "--splits-csv",
+        type=Path,
+        default=root / "metadata" / "splits.csv",
+        help="Optional CSV containing train/val/test assignments.",
+    )
+    parser.add_argument(
+        "--out-dataset-csv",
+        type=Path,
+        default=root / "dataset_csv" / "tcga_lihc_er.csv",
+        help="Output CLAM dataset CSV with case_id, slide_id, and label columns.",
+    )
+    parser.add_argument(
+        "--out-process-list-csv",
+        type=Path,
+        default=root / "dataset_csv" / "tcga_lihc_er_process_list.csv",
+        help="Output process list CSV for patch/feature extraction.",
+    )
+    parser.add_argument(
+        "--out-split-csv",
+        type=Path,
+        default=root / "splits" / "splits_0.csv",
+        help="Output CLAM split CSV with train/val/test columns.",
+    )
+    parser.add_argument("--case-col", type=str, default="patient_id")
+    parser.add_argument("--slide-id-col", type=str, default="slide_id")
+    parser.add_argument("--slide-path-col", type=str, default="wsi_path")
+    parser.add_argument("--label-col", type=str, default="early_recurrence")
+    parser.add_argument("--split-col", type=str, default="split")
+    parser.add_argument(
+        "--skip-splits",
+        action="store_true",
+        help="Only write dataset_csv and process_list outputs.",
+    )
 
-# 2) process list: 给 patch / feature extraction 用
-process_df = slides[["slide_id", "wsi_path"]].drop_duplicates().copy()
-process_df.to_csv(out_dataset / "tcga_lihc_er_process_list.csv", index=False)
+    return parser.parse_args()
 
-# 3) 生成一个 CLAM 可读的 split 文件（单折）
-split_df = splits.merge(labels, on="patient_id", how="inner").copy()
-split_df = split_df.rename(columns={
-    "patient_id": "case_id",
-    "early_recurrence": "label"
-})
-split_df = split_df[["case_id", "slide_id", "split"]].drop_duplicates()
 
-# CLAM 常见 split 文件是三列并排：train / val / test
-train_ids = split_df.loc[split_df["split"] == "train", "slide_id"].tolist()
-val_ids   = split_df.loc[split_df["split"] == "val", "slide_id"].tolist()
-test_ids  = split_df.loc[split_df["split"] == "test", "slide_id"].tolist()
+def pad_column(values, target_len):
+    return values + [None] * (target_len - len(values))
 
-max_len = max(len(train_ids), len(val_ids), len(test_ids))
-pad = lambda x: x + [None] * (max_len - len(x))
 
-split_out = pd.DataFrame({
-    "train": pad(train_ids),
-    "val": pad(val_ids),
-    "test": pad(test_ids),
-})
-split_out.to_csv(out_splits / "split0.csv", index=False)
+def main():
+    args = parse_args()
 
-print("Done:")
-print(" -", out_dataset / "tcga_lihc_er.csv")
-print(" -", out_dataset / "tcga_lihc_er_process_list.csv")
-print(" -", out_splits / "split0.csv")
+    slides = pd.read_csv(args.slides_csv)
+    labels = pd.read_csv(args.labels_csv)
+
+    args.out_dataset_csv.parent.mkdir(parents=True, exist_ok=True)
+    args.out_process_list_csv.parent.mkdir(parents=True, exist_ok=True)
+    args.out_split_csv.parent.mkdir(parents=True, exist_ok=True)
+
+    dataset_df = slides.merge(labels, on=args.case_col, how="inner").copy()
+    dataset_df = dataset_df.rename(
+        columns={
+            args.case_col: "case_id",
+            args.label_col: "label",
+        }
+    )
+    dataset_df = dataset_df[["case_id", args.slide_id_col, "label"]].drop_duplicates()
+    dataset_df = dataset_df.rename(columns={args.slide_id_col: "slide_id"})
+    dataset_df["label"] = dataset_df["label"].astype(int)
+    dataset_df.to_csv(args.out_dataset_csv, index=False)
+
+    process_df = slides[[args.slide_id_col, args.slide_path_col]].drop_duplicates().copy()
+    process_df.to_csv(args.out_process_list_csv, index=False)
+
+    written_files = [args.out_dataset_csv, args.out_process_list_csv]
+
+    if not args.skip_splits:
+        splits = pd.read_csv(args.splits_csv)
+        split_df = splits.merge(labels, on=args.case_col, how="inner").copy()
+        split_df = split_df.rename(columns={args.slide_id_col: "slide_id"})
+        split_df = split_df[["slide_id", args.split_col]].drop_duplicates()
+
+        train_ids = split_df.loc[split_df[args.split_col] == "train", "slide_id"].tolist()
+        val_ids = split_df.loc[split_df[args.split_col] == "val", "slide_id"].tolist()
+        test_ids = split_df.loc[split_df[args.split_col] == "test", "slide_id"].tolist()
+
+        max_len = max(len(train_ids), len(val_ids), len(test_ids))
+        split_out = pd.DataFrame(
+            {
+                "train": pad_column(train_ids, max_len),
+                "val": pad_column(val_ids, max_len),
+                "test": pad_column(test_ids, max_len),
+            }
+        )
+        split_out.to_csv(args.out_split_csv, index=False)
+        written_files.append(args.out_split_csv)
+
+    print("Wrote:")
+    for path in written_files:
+        print(f" - {path}")
+
+
+if __name__ == "__main__":
+    main()
