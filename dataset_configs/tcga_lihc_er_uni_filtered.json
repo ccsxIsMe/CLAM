@@ -1,0 +1,16 @@
+{
+  "task": "task_tcga_lihc_early_recurrence_filtered",
+  "dataset_csv": "data/tcga_lihc_er/dataset_csv/tcga_lihc_er_filtered.csv",
+  "features_subdir": "features_uni",
+  "default_split_dir": "data/tcga_lihc_er/splits_filtered",
+  "label_dict": {
+    "0": 0,
+    "1": 1
+  },
+  "label_col": "label",
+  "n_classes": 2,
+  "mil_patient_strat": true,
+  "split_patient_strat": true,
+  "split_patient_voting": "max",
+  "ignore": []
+}

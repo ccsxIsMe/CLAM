@@ -324,6 +324,29 @@ class Generic_MIL_Dataset(Generic_WSI_Classification_Dataset):
 	def load_from_h5(self, toggle):
 		self.use_h5 = toggle
 
+	def list_missing_feature_files(self, use_h5=None):
+		if self.data_dir is None:
+			return []
+
+		use_h5 = self.use_h5 if use_h5 is None else use_h5
+		subdir = 'h5_files' if use_h5 else 'pt_files'
+		extension = '.h5' if use_h5 else '.pt'
+		missing = []
+
+		for idx in range(len(self.slide_data)):
+			slide_id = self.slide_data['slide_id'][idx]
+			if isinstance(self.data_dir, dict):
+				source = self.slide_data['source'][idx]
+				base_dir = self.data_dir[source]
+			else:
+				base_dir = self.data_dir
+
+			full_path = os.path.join(base_dir, subdir, '{}{}'.format(slide_id, extension))
+			if not os.path.isfile(full_path):
+				missing.append({'slide_id': slide_id, 'path': full_path})
+
+		return missing
+
 	def __getitem__(self, idx):
 		slide_id = self.slide_data['slide_id'][idx]
 		label = self.slide_data['label'][idx]

@@ -16,6 +16,27 @@ from dataset_modules.task_config import load_task_config
 import h5py
 from utils.eval_utils import *
 
+
+def validate_split_features(split_name, split_dataset, use_h5=False, max_examples=5):
+    if split_dataset is None:
+        return
+
+    missing = split_dataset.list_missing_feature_files(use_h5=use_h5)
+    if not missing:
+        print('feature check passed for {} split: {} slides'.format(split_name, len(split_dataset)))
+        return
+
+    preview = '\n'.join(
+        '  - {} -> {}'.format(item['slide_id'], item['path'])
+        for item in missing[:max_examples]
+    )
+    raise FileNotFoundError(
+        'Missing {} feature files in {} split (showing up to {}):\n{}'.format(
+            len(missing), split_name, max_examples, preview
+        )
+    )
+
+
 # Training settings
 parser = argparse.ArgumentParser(description='CLAM Evaluation Script')
 parser.add_argument('--data_root_dir', type=str, default=None,
@@ -120,10 +141,12 @@ if __name__ == "__main__":
     for ckpt_idx in range(len(ckpt_paths)):
         if datasets_id[args.split] < 0:
             split_dataset = dataset
+            validate_split_features('all', split_dataset)
         else:
             csv_path = '{}/splits_{}.csv'.format(args.splits_dir, folds[ckpt_idx])
             datasets = dataset.return_splits(from_id=False, csv_path=csv_path)
             split_dataset = datasets[datasets_id[args.split]]
+            validate_split_features(args.split, split_dataset)
         model, patient_results, test_error, auc, df  = eval(split_dataset, args, ckpt_paths[ckpt_idx])
         all_results.append(patient_results)
         all_auc.append(auc)

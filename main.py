@@ -22,6 +22,26 @@ import pandas as pd
 import numpy as np
 
 
+def validate_split_features(split_name, split_dataset, use_h5=False, max_examples=5):
+    if split_dataset is None:
+        return
+
+    missing = split_dataset.list_missing_feature_files(use_h5=use_h5)
+    if not missing:
+        print('feature check passed for {} split: {} slides'.format(split_name, len(split_dataset)))
+        return
+
+    preview = '\n'.join(
+        '  - {} -> {}'.format(item['slide_id'], item['path'])
+        for item in missing[:max_examples]
+    )
+    raise FileNotFoundError(
+        'Missing {} feature files in {} split (showing up to {}):\n{}'.format(
+            len(missing), split_name, max_examples, preview
+        )
+    )
+
+
 def main(args):
     # create results directory if necessary
     if not os.path.isdir(args.results_dir):
@@ -45,6 +65,10 @@ def main(args):
         seed_torch(args.seed)
         train_dataset, val_dataset, test_dataset = dataset.return_splits(from_id=False, 
                 csv_path='{}/splits_{}.csv'.format(args.split_dir, i))
+
+        validate_split_features('train', train_dataset)
+        validate_split_features('val', val_dataset)
+        validate_split_features('test', test_dataset)
         
         datasets = (train_dataset, val_dataset, test_dataset)
         results, test_auc, val_auc, test_acc, val_acc  = train(datasets, i, args)
