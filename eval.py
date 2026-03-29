@@ -84,7 +84,8 @@ args.models_dir = os.path.join(args.results_dir, str(args.models_exp_code))
 os.makedirs(args.save_dir, exist_ok=True)
 
 if args.splits_dir is None:
-    args.splits_dir = args.models_dir
+    resolved_split_dir = task_config.resolve_split_dir(None)
+    args.splits_dir = resolved_split_dir if resolved_split_dir is not None else args.models_dir
 else:
     args.splits_dir = task_config.resolve_split_dir(args.splits_dir)
 
