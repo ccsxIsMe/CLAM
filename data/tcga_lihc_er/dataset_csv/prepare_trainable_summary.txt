@@ -1,0 +1,8 @@
+total_dataset_rows=148
+available_rows=147
+excluded_rows=232
+patches_dir=None
+features_pt_dir=/data3/chensx/CLAM/data/tcga_lihc_er/features_uni/pt_files
+filtered_train=106
+filtered_val=20
+filtered_test=21

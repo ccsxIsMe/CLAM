@@ -1,0 +1,1 @@
+{'task': 'task_tcga_lihc_early_recurrence_filtered', 'task_config': '/data3/chensx/CLAM/dataset_configs/tcga_lihc_er_uni_filtered.json', 'split': 'test', 'save_dir': './eval_results/EVAL_tcga_lihc_uni_clam_eval_filtered', 'models_dir': '/data3/chensx/CLAM/results/tcga_lihc_uni_clam_s1', 'model_type': 'clam_sb', 'drop_out': 0.25, 'model_size': 'small'}
